@@ -25,6 +25,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +41,10 @@ var logDirs []string
 // If non-empty, overrides the choice of directory in which to write logs.
 // See createLogDirs for the full list of possible destinations.
 var logDir = flag.String("log_dir", "", "If non-empty, write log files in this directory")
+
+// If non-empty, overrides the choice of directory in which to write logs.
+// See createLogDirs for the full list of possible destinations.
+var logFileSize = flag.String("log_file_size", "", "If non-empty, split log files by this size")
 
 func createLogDirs() {
 	if *logDir != "" {
@@ -67,6 +73,43 @@ func init() {
 
 	// Sanitize userName since it may contain filepath separators on Windows.
 	userName = strings.Replace(userName, `\`, "_", -1)
+
+	// Parse incoming log file size parameters
+	if *logFileSize != "" {
+		MaxSize, err = ParseSize(*logFileSize)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	}
+}
+
+var sizeRE = regexp.MustCompile("^([0-9]+)(T|t|G|g|M|m|K|k|B|b)$")
+
+func ParseSize(sizeStr string) (uint64, error) {
+	matches := sizeRE.FindStringSubmatch(sizeStr)
+	if len(matches) != 3 {
+		return 0, fmt.Errorf("not a valid size string: %q", sizeStr)
+	}
+	var (
+		n, _ = strconv.Atoi(matches[1])
+		size = uint64(n)
+	)
+	switch unit := matches[2]; unit {
+	case "T", "t":
+		size *= 1024 * 1024 * 1024 * 1024
+	case "G", "g":
+		size *= 1024 * 1024 * 1024
+	case "M", "m":
+		size *= 1024 * 1024
+	case "K", "k":
+		size *= 1024
+	case "B", "b":
+		// Value already correct
+	default:
+		return 0, fmt.Errorf("invalid size unit in size string: %q", unit)
+	}
+	return size, nil
 }
 
 // shortHostname returns its argument, truncating at the first period.
